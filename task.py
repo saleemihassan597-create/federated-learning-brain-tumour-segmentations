@@ -3,11 +3,13 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from datasets import load_dataset
+from datasets_loaders import create_dataset
 from flwr_datasets import FederatedDataset
 from flwr_datasets.partitioner import IidPartitioner
 from torch.utils.data import DataLoader
-from torchvision.transforms import Compose, Normalize, ToTensor
+from torchvision.transforms import Compose, Normalize, ToTensor, Resize
+from torchvision.transforms import Compose, Resize, ToTensor, Normalize, Lambda
+from torchvision import models
 
 
 class Net(nn.Module):
@@ -15,62 +17,75 @@ class Net(nn.Module):
 
     def __init__(self):
         super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(3, 6, 5)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(6, 16, 5)
-        self.fc1 = nn.Linear(16 * 5 * 5, 120)
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, 10)
+       # Load pretrained MobileNetV2
+        self.model = models.mobilenet_v2(
+            weights=models.MobileNet_V2_Weights.DEFAULT
+        )
+
+        # Freeze backbone (optional)
+        for param in self.model.features.parameters():
+            param.requires_grad = False
+
+        # Custom classification head
+        self.model.classifier = nn.Sequential(
+            nn.Dropout(p=0.4),
+            nn.Linear(1280, 256),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=0.3),
+            nn.Linear(256, 2)
+        )
 
     def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))
-        x = self.pool(F.relu(self.conv2(x)))
-        x = x.view(-1, 16 * 5 * 5)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        return self.fc3(x)
+      return self.model(x)
 
 
-fds = None  # Cache FederatedDataset
-
-pytorch_transforms = Compose([ToTensor(), Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-
+pytorch_transforms = Compose([
+    Lambda(lambda img: img.convert("RGB")),
+    Resize((224, 224)),
+    ToTensor(),
+    Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225],
+    ),
+])
 
 def apply_transforms(batch):
     """Apply transforms to the partition from FederatedDataset."""
     batch["img"] = [pytorch_transforms(img) for img in batch["img"]]
     return batch
 
+brain_dataset = None
+
+def get_dataset():
+    global brain_dataset
+    DATASET_PATH = "data/brain-tumor-multimodal-image"
+    if brain_dataset is None:
+        loader = create_dataset('brain_tumor', DATASET_PATH)
+        brain_dataset = loader.load()
+
+    return brain_dataset
 
 def load_data(partition_id: int, num_partitions: int, batch_size: int):
-    """Load partition CIFAR10 data."""
-    # Only initialize `FederatedDataset` once
-    global fds
-    if fds is None:
-        partitioner = IidPartitioner(num_partitions=num_partitions)
-        fds = FederatedDataset(
-            dataset="uoft-cs/cifar10",
-            partitioners={"train": partitioner},
-        )
-    partition = fds.load_partition(partition_id)
-    # Divide data on each node: 80% train, 20% test
-    partition_train_test = partition.train_test_split(test_size=0.2, seed=42)
-    # Construct dataloaders
-    partition_train_test = partition_train_test.with_transform(apply_transforms)
-    trainloader = DataLoader(
-        partition_train_test["train"], batch_size=batch_size, shuffle=True
-    )
-    testloader = DataLoader(partition_train_test["test"], batch_size=batch_size)
-    return trainloader, testloader
 
+    brain_dataset = get_dataset()
+    partitioner = IidPartitioner(num_partitions=num_partitions)
+    partitioner.dataset = brain_dataset["train"]
+    partition = partitioner.load_partition(partition_id)
+
+    partition = partition.train_test_split(test_size=0.2, seed=42,)
+    partition = partition.with_transform(apply_transforms)
+    trainloader = DataLoader( partition["train"], batch_size=batch_size, shuffle=True,)
+    testloader = DataLoader(partition["test"], batch_size=batch_size, shuffle=False,)
+
+    return trainloader, testloader
 
 def load_centralized_dataset():
     """Load test set and return dataloader."""
     # Load entire test set
-    test_dataset = load_dataset("uoft-cs/cifar10", split="test")
+    dataset = get_dataset()
+    test_dataset = dataset["test"]
     dataset = test_dataset.with_format("torch").with_transform(apply_transforms)
     return DataLoader(dataset, batch_size=128)
-
 
 def train(net, trainloader, epochs, lr, device):
     """Train the model on the training set."""
