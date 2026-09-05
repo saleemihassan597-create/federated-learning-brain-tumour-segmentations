@@ -70,7 +70,13 @@ def load_data(partition_id: int, num_partitions: int, batch_size: int):
     partitioner.dataset = brain_dataset["train"]
     partition = partitioner.load_partition(partition_id)
 
+    print(f"Client {partition_id}: Partition size = {len(partition)}")
+ 
     partition = partition.train_test_split(test_size=0.2, seed=42,)
+
+    print(f"Client {partition_id}: train={len(partition["train"])}, test={len(partition["test"])}")
+
+
     partition = partition.with_transform(apply_transforms)
     trainloader = DataLoader( partition["train"], batch_size=batch_size, shuffle=True,)
     testloader = DataLoader(partition["test"], batch_size=batch_size, shuffle=False,)
