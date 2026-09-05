@@ -46,4 +46,10 @@ fraction-evaluate = 1.0
 local-epochs = 1
 learning-rate = 0.1
 batch-size = 32
-save-model = true
+save-model = false
+
+
+[partition]
+type = "shard"         # options: iid, dirichlet, shard
+alpha = 0.5          # used only for dirichlet
+num_shards = 2       # used only for shard

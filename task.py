@@ -2,15 +2,12 @@
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from datasets_loaders import create_dataset
-from flwr_datasets import FederatedDataset
-from flwr_datasets.partitioner import IidPartitioner
 from torch.utils.data import DataLoader
 from torchvision.transforms import Compose, Normalize, ToTensor, Resize
 from torchvision.transforms import Compose, Resize, ToTensor, Normalize, Lambda
 from torchvision import models
-
+from utils.partitioner_helper import get_partitioner
 
 class Net(nn.Module):
     """Model (simple CNN adapted from 'PyTorch: A 60 Minute Blitz')"""
@@ -68,7 +65,8 @@ def get_dataset():
 def load_data(partition_id: int, num_partitions: int, batch_size: int):
 
     brain_dataset = get_dataset()
-    partitioner = IidPartitioner(num_partitions=num_partitions)
+    partitioner = get_partitioner(num_partitions)
+    
     partitioner.dataset = brain_dataset["train"]
     partition = partitioner.load_partition(partition_id)
 
