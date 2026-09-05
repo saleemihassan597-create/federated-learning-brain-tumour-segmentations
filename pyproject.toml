@@ -47,9 +47,12 @@ local-epochs = 1
 learning-rate = 0.1
 batch-size = 32
 save-model = false
-
+fraction-fit = 1.0
+min-available-clients = 2
+algorithm = "fedprox"
+proximal-mu = 0.01
 
 [partition]
-type = "shard"         # options: iid, dirichlet, shard
+type = "iid"         # options: iid, dirichlet, shard
 alpha = 0.5          # used only for dirichlet
 num_shards = 2       # used only for shard

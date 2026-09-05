@@ -1,11 +1,11 @@
-"""pytorchexample: A Flower / PyTorch app."""
-
 import torch
 from flwr.app import ArrayRecord, ConfigRecord, Context, MetricRecord
 from flwr.serverapp import Grid, ServerApp
 from flwr.serverapp.strategy import FedAvg
 
 from task import Net, load_centralized_dataset, test
+
+from algorithms.server_strategies import get_strategy
 
 # Create ServerApp
 app = ServerApp()
@@ -14,6 +14,8 @@ app = ServerApp()
 @app.main()
 def main(grid: Grid, context: Context) -> None:
     """Main entry point for the ServerApp."""
+
+    algorithm = context.run_config["algorithm"]
 
     # Read run config
     fraction_evaluate: float = context.run_config["fraction-evaluate"]
@@ -24,8 +26,17 @@ def main(grid: Grid, context: Context) -> None:
     global_model = Net()
     arrays = ArrayRecord(global_model.state_dict())
 
-    # Initialize FedAvg strategy
-    strategy = FedAvg(fraction_evaluate=fraction_evaluate)
+    # Build kwargs relevant to whichever strategy is picked;
+    # extras are ignored by strategies that don't use them
+    strategy_kwargs = {
+        "fraction_evaluate": context.run_config["fraction-evaluate"],
+        "min_available_nodes": context.run_config["min-available-clients"],
+    }
+
+    if algorithm == "fedprox":
+        strategy_kwargs["proximal_mu"] = context.run_config["proximal-mu"]
+
+    strategy = get_strategy(algorithm, **strategy_kwargs)
 
     # Start strategy, run FedAvg for `num_rounds`
     result = strategy.start(

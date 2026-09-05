@@ -8,6 +8,7 @@ from torchvision.transforms import Compose, Normalize, ToTensor, Resize
 from torchvision.transforms import Compose, Resize, ToTensor, Normalize, Lambda
 from torchvision import models
 from utils.partitioner_helper import get_partitioner
+from collections import Counter
 
 class Net(nn.Module):
     """Model (simple CNN adapted from 'PyTorch: A 60 Minute Blitz')"""
@@ -71,11 +72,13 @@ def load_data(partition_id: int, num_partitions: int, batch_size: int):
     partition = partitioner.load_partition(partition_id)
 
     print(f"Client {partition_id}: Partition size = {len(partition)}")
+
+    print(Counter(partition["modality"]))
+    print(Counter(partition["label"]))
  
     partition = partition.train_test_split(test_size=0.2, seed=42,)
 
     print(f"Client {partition_id}: train={len(partition["train"])}, test={len(partition["test"])}")
-
 
     partition = partition.with_transform(apply_transforms)
     trainloader = DataLoader( partition["train"], batch_size=batch_size, shuffle=True,)
@@ -90,26 +93,6 @@ def load_centralized_dataset():
     test_dataset = dataset["test"]
     dataset = test_dataset.with_format("torch").with_transform(apply_transforms)
     return DataLoader(dataset, batch_size=128)
-
-def train(net, trainloader, epochs, lr, device):
-    """Train the model on the training set."""
-    net.to(device)  # move model to GPU if available
-    criterion = torch.nn.CrossEntropyLoss().to(device)
-    optimizer = torch.optim.SGD(net.parameters(), lr=lr, momentum=0.9)
-    net.train()
-    running_loss = 0.0
-    for _ in range(epochs):
-        for batch in trainloader:
-            images = batch["img"].to(device)
-            labels = batch["label"].to(device)
-            optimizer.zero_grad()
-            loss = criterion(net(images), labels)
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
-    avg_trainloss = running_loss / (epochs * len(trainloader))
-    return avg_trainloss
-
 
 def test(net, testloader, device):
     """Validate the model on the test set."""

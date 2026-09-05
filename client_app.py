@@ -6,7 +6,8 @@ from flwr.clientapp import ClientApp
 
 from task import Net, load_data
 from task import test as test_fn
-from task import train as train_fn
+
+from algorithms import get_trainer
 
 # Flower ClientApp
 app = ClientApp()
@@ -28,8 +29,16 @@ def train(msg: Message, context: Context):
     batch_size = context.run_config["batch-size"]
     trainloader, _ = load_data(partition_id, num_partitions, batch_size)
 
+    # Pull algorithm-specific kwargs (e.g. proximal_mu) straight from config —
+    # trainers that don't need them just ignore extras via **kwargs
+    algorithm = context.run_config["algorithm"]
+    trainer = get_trainer(
+        algorithm,
+        proximal_mu=msg.content["config"].get("proximal_mu", 0.0),
+    )
+
     # Call the training function
-    train_loss = train_fn(
+    train_loss = trainer.train(
         model,
         trainloader,
         context.run_config["local-epochs"],
