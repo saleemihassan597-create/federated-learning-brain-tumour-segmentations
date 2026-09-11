@@ -1,20 +1,21 @@
 import torch
 from flwr.app import ArrayRecord, ConfigRecord, Context, MetricRecord
 from flwr.serverapp import Grid, ServerApp
-from flwr.serverapp.strategy import FedAvg
 
-from task import Net, load_centralized_dataset, test
+from task import load_centralized_dataset, test
 
 from algorithms.server_strategies import get_strategy
 
+from models import create_model
+
 # Create ServerApp
 app = ServerApp()
-
-
+model_name = None
 @app.main()
+
 def main(grid: Grid, context: Context) -> None:
     """Main entry point for the ServerApp."""
-
+    global model_name 
     algorithm = context.run_config["algorithm"]
 
     # Read run config
@@ -22,8 +23,11 @@ def main(grid: Grid, context: Context) -> None:
     num_rounds: int = context.run_config["num-server-rounds"]
     lr: float = context.run_config["learning-rate"]
 
+    # Model selected from config
+    model_name = context.run_config["model_name"]
+
     # Load global model
-    global_model = Net()
+    global_model = create_model(model_name)    
     arrays = ArrayRecord(global_model.state_dict())
 
     # Build kwargs relevant to whichever strategy is picked;
@@ -58,7 +62,8 @@ def global_evaluate(server_round: int, arrays: ArrayRecord) -> MetricRecord:
     """Evaluate model on central data."""
 
     # Load the model and initialize it with the received weights
-    model = Net()
+   
+    model = create_model(model_name)  
     model.load_state_dict(arrays.to_torch_state_dict())
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)

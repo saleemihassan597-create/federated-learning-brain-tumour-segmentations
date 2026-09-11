@@ -15,18 +15,18 @@ dependencies = [
     "pytest"
 ]
 
-[tool.uv.sources]
-torch = [
-    { index = "pytorch-cu128" },
-]
-torchvision = [
-    { index = "pytorch-cu128" },
-]
+#[tool.uv.sources]
+#torch = [
+#    { index = "pytorch-cu128" },
+#]
+#torchvision = [
+#    { index = "pytorch-cu128" },
+#]
 
-[[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
-explicit = true
+#[[tool.uv.index]]
+#name = "pytorch-cu128"
+#url = "https://download.pytorch.org/whl/cu128"
+#explicit = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]
@@ -34,14 +34,14 @@ packages = ["."]
 [tool.flwr.app]
 publisher = "flwrlabs"
 fab-format-version = 1
-flwr-version-target = "1.36.0"
+flwr-version-target = "1.31.0"
 
 [tool.flwr.app.components]
 serverapp = "server_app:app"
 clientapp = "client_app:app"
 
 [tool.flwr.app.config]
-num-server-rounds = 3
+num-server-rounds = 2
 fraction-evaluate = 1.0
 local-epochs = 1
 learning-rate = 0.1
@@ -49,8 +49,9 @@ batch-size = 32
 save-model = false
 fraction-fit = 1.0
 min-available-clients = 2
-algorithm = "fedprox"
+algorithm = "fedavg"
 proximal-mu = 0.01
+model_name = "mobilenet"
 
 [partition]
 type = "iid"         # options: iid, dirichlet, shard

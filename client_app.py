@@ -4,10 +4,12 @@ import torch
 from flwr.app import ArrayRecord, Context, Message, MetricRecord, RecordDict
 from flwr.clientapp import ClientApp
 
-from task import Net, load_data
+from task import load_data
 from task import test as test_fn
 
 from algorithms import get_trainer
+
+from models import create_model
 
 # Flower ClientApp
 app = ClientApp()
@@ -18,7 +20,8 @@ def train(msg: Message, context: Context):
     """Train the model on local data."""
 
     # Load the model and initialize it with the received weights
-    model = Net()
+    model_name = context.run_config["model_name"]
+    model = create_model(model_name)
     model.load_state_dict(msg.content["arrays"].to_torch_state_dict())
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
@@ -62,7 +65,9 @@ def evaluate(msg: Message, context: Context):
     """Evaluate the model on local data."""
 
     # Load the model and initialize it with the received weights
-    model = Net()
+    model_name = context.run_config["model_name"]
+    model = create_model(model_name)
+    # model = Net()
     model.load_state_dict(msg.content["arrays"].to_torch_state_dict())
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
