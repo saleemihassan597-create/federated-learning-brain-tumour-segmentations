@@ -1,78 +1,101 @@
+from pathlib import Path
+
+import pandas as pd
 import torch
 from flwr.app import ArrayRecord, ConfigRecord, Context, MetricRecord
 from flwr.serverapp import Grid, ServerApp
 
+from algorithms.server_strategies import get_strategy
+from models import create_model
 from task import load_centralized_dataset, test
 
-from algorithms.server_strategies import get_strategy
-
-from models import create_model
-
-# Create ServerApp
 app = ServerApp()
-model_name = None
+model_name_global = "unet"
+
+
 @app.main()
-
 def main(grid: Grid, context: Context) -> None:
-    """Main entry point for the ServerApp."""
-    global model_name 
-    algorithm = context.run_config["algorithm"]
+    """Main entry point for Flower ServerApp."""
+    global model_name_global
+    config = context.run_config
+    algorithm = str(config.get("algorithm", config.get("strategy", "fedavg"))).lower()
+    model_name_global = str(config.get("model_name", "unet"))
+    num_clients = int(config.get("num-clients", config.get("min-available-clients", 2)))
+    num_rounds = int(config.get("num-server-rounds", 2))
+    lr = float(config.get("learning-rate", 1e-4))
 
-    # Read run config
-    fraction_evaluate: float = context.run_config["fraction-evaluate"]
-    num_rounds: int = context.run_config["num-server-rounds"]
-    lr: float = context.run_config["learning-rate"]
+    # Load initial global model
+    global_model = create_model(model_name_global)
+    initial_arrays = ArrayRecord(global_model.state_dict())
 
-    # Model selected from config
-    model_name = context.run_config["model_name"]
-
-    # Load global model
-    global_model = create_model(model_name)    
-    arrays = ArrayRecord(global_model.state_dict())
-
-    # Build kwargs relevant to whichever strategy is picked;
-    # extras are ignored by strategies that don't use them
+    # Build strategy arguments
     strategy_kwargs = {
-        "fraction_evaluate": context.run_config["fraction-evaluate"],
-        "min_available_nodes": context.run_config["min-available-clients"],
+        "fraction_train": float(config.get("fraction-train", 1.0)),
+        "fraction_evaluate": float(config.get("fraction-evaluate", 1.0)),
+        "min_train_nodes": num_clients,
+        "min_evaluate_nodes": num_clients,
+        "min_available_nodes": num_clients,
+        "weighted_by_key": "num-examples",
     }
 
     if algorithm == "fedprox":
-        strategy_kwargs["proximal_mu"] = context.run_config["proximal-mu"]
+        strategy_kwargs["proximal_mu"] = float(config.get("proximal-mu", 0.01))
 
     strategy = get_strategy(algorithm, **strategy_kwargs)
 
-    # Start strategy, run FedAvg for `num_rounds`
+    # Run strategy across server rounds
     result = strategy.start(
         grid=grid,
-        initial_arrays=arrays,
-        train_config=ConfigRecord({"lr": lr}),
+        initial_arrays=initial_arrays,
+        train_config=ConfigRecord({"lr": lr, "proximal_mu": strategy_kwargs.get("proximal_mu", 0.0)}),
         num_rounds=num_rounds,
-        evaluate_fn=global_evaluate,
+        evaluate_fn=global_evaluate if config.get("enable-global-eval", False) else None,
     )
 
-    if context.run_config["save-model"]:
-        # Save final model to disk
-        print("\nSaving final model to disk...")
-        state_dict = result.arrays.to_torch_state_dict()
-        torch.save(state_dict, "final_model.pt")
+    output_dir = Path(config.get("output-dir", "artifacts"))
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save final global model checkpoint
+    checkpoint_name = "final_model.pt" if config.get("save-model", False) else f"{algorithm}_fets2022_final.pt"
+    model_checkpoint_path = output_dir / checkpoint_name
+    torch.save(result.arrays.to_torch_state_dict(), model_checkpoint_path)
+    print(f"\n[Server] Model checkpoint saved to: {model_checkpoint_path}")
+
+    # Build and save round-by-round metrics to CSV
+    rows = []
+    rounds = sorted(set(list(result.train_metrics_clientapp.keys()) + list(result.evaluate_metrics_clientapp.keys())))
+    for r in rounds:
+        row = {"round": r, "strategy": algorithm}
+        if r in result.train_metrics_clientapp:
+            for k, v in dict(result.train_metrics_clientapp[r]).items():
+                row[k] = v
+        if r in result.evaluate_metrics_clientapp:
+            for k, v in dict(result.evaluate_metrics_clientapp[r]).items():
+                row[k] = v
+        rows.append(row)
+
+    if rows:
+        df = pd.DataFrame(rows)
+        csv_path = output_dir / f"{algorithm}_fets2022_metrics.csv"
+        df.to_csv(csv_path, index=False)
+        print("\n" + "=" * 78)
+        print(f"        FEDERATED LEARNING RESULTS SUMMARY ({algorithm.upper()})")
+        print("=" * 78)
+        print(df.to_string(index=False))
+        print("=" * 78)
+        print(f"[Server] Round results saved to CSV: {csv_path}\n")
 
 
 def global_evaluate(server_round: int, arrays: ArrayRecord) -> MetricRecord:
-    """Evaluate model on central data."""
-
-    # Load the model and initialize it with the received weights
-   
-    model = create_model(model_name)  
+    """Evaluate global model on pooled dataset if enabled."""
+    model = create_model(model_name_global)
     model.load_state_dict(arrays.to_torch_state_dict())
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model.to(device)
 
-    # Load entire test set
-    test_dataloader = load_centralized_dataset()
-
-    # Evaluate the global model on the test set
-    test_loss, test_acc = test(model, test_dataloader, device)
-
-    # Return the evaluation metrics
-    return MetricRecord({"accuracy": test_acc, "loss": test_loss})
+    config = {"data-root": "E:/rnds/MICCAI_FeTS2022_TrainingData/MICCAI_FeTS2022_TrainingData",
+              "partition-csv": "E:/rnds/MICCAI_FeTS2022_TrainingData/MICCAI_FeTS2022_TrainingData/partitioning_1.csv"}
+    _, valloader = load_centralized_dataset(config)
+    eval_loss, region_metrics = test(model, valloader, device)
+    metrics_dict = {"loss": eval_loss}
+    metrics_dict.update(region_metrics)
+    return MetricRecord(metrics_dict)

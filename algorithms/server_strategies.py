@@ -7,10 +7,15 @@ STRATEGY_REGISTRY = {
 
 
 def get_strategy(algorithm: str, **kwargs):
-    try:
-        strategy_cls = STRATEGY_REGISTRY[algorithm]
-    except KeyError:
+    algorithm_key = algorithm.lower()
+    if algorithm_key not in STRATEGY_REGISTRY:
         raise ValueError(
             f"Unknown algorithm '{algorithm}'. Available: {list(STRATEGY_REGISTRY)}"
         )
-    return strategy_cls(**kwargs)
+    strategy_cls = STRATEGY_REGISTRY[algorithm_key]
+
+    params = dict(kwargs)
+    if "weighted_by_key" not in params:
+        params["weighted_by_key"] = "num-examples"
+
+    return strategy_cls(**params)

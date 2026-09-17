@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import torch
 
+
 class BaseTrainer(ABC):
     """Common interface every algorithm trainer must implement."""
 
@@ -17,29 +18,31 @@ class BaseTrainer(ABC):
         Override if the algorithm needs to snapshot state (e.g. global params)."""
         pass
 
-    def train(self, model, trainloader, epochs, lr, device):
-        """Shared training loop — same for every algorithm.
-        Only compute_loss / on_train_start differ per strategy."""
+    def train(self, model, trainloader, epochs: int, lr: float, device):
+        """Shared training loop matching maam's structure and user's AdamW/FeTS training flow."""
         self.on_train_start(model)
 
         model.to(device)
         model.train()
         criterion = torch.nn.CrossEntropyLoss()
-        optimizer = torch.optim.SGD(model.parameters(), lr=lr)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-5)
 
         total_loss = 0.0
-        num_batches = 0
+        steps = 0
         for _ in range(epochs):
             for batch in trainloader:
-                images, labels = batch["img"].to(device), batch["label"].to(device)
+                images = (batch["image"] if "image" in batch else batch["img"]).to(device)
+                labels = batch["label"].to(device).long()
+                if labels.ndim == 5:
+                    labels = labels.squeeze(1)
 
-                optimizer.zero_grad()
+                optimizer.zero_grad(set_to_none=True)
                 outputs = model(images)
                 loss = self.compute_loss(model, outputs, labels, criterion)
                 loss.backward()
                 optimizer.step()
 
                 total_loss += loss.item()
-                num_batches += 1
+                steps += 1
 
-        return total_loss / num_batches
+        return total_loss / max(steps, 1)

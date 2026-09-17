@@ -1,111 +1,80 @@
-"""pytorchexample: A Flower / PyTorch app."""
+from __future__ import annotations
 
 import torch
-import torch.nn as nn
-from datasets_loaders import create_dataset
-from torch.utils.data import DataLoader
-from torchvision.transforms import Compose, Normalize, ToTensor, Resize
-from torchvision.transforms import Compose, Resize, ToTensor, Normalize, Lambda
-from torchvision import models
-from utils.partitioner_helper import get_partitioner
-from collections import Counter
+from monai.inferers import sliding_window_inference
 
-class Net(nn.Module):
-    """Model (simple CNN adapted from 'PyTorch: A 60 Minute Blitz')"""
-
-    def __init__(self):
-        super(Net, self).__init__()
-       # Load pretrained MobileNetV2
-        self.model = models.mobilenet_v2(
-            weights=models.MobileNet_V2_Weights.DEFAULT
-        )
-
-        # Freeze backbone (optional)
-        for param in self.model.features.parameters():
-            param.requires_grad = False
-
-        # Custom classification head
-        self.model.classifier = nn.Sequential(
-            nn.Dropout(p=0.4),
-            nn.Linear(1280, 256),
-            nn.ReLU(inplace=True),
-            nn.Dropout(p=0.3),
-            nn.Linear(256, 2)
-        )
-
-    def forward(self, x):
-      return self.model(x)
+from datasets_loaders.fets_dataset import (
+    client_records,
+    fets_region_metrics,
+    make_loaders,
+    read_partitioning,
+)
 
 
-pytorch_transforms = Compose([
-    Lambda(lambda img: img.convert("RGB")),
-    Resize((224, 224)),
-    ToTensor(),
-    Normalize(
-        mean=[0.485, 0.456, 0.406],
-        std=[0.229, 0.224, 0.225],
-    ),
-])
+def load_data(partition_id: int, config: dict):
+    """Load train and validation data loaders for a specific client partition."""
+    data_root = config["data-root"]
+    partition_csv = config["partition-csv"]
+    batch_size = int(config.get("batch-size", 1))
+    cache_rate = float(config.get("cache-rate", 0.0))
+    seed = int(config.get("seed", 42)) + int(partition_id)
+    num_workers = int(config.get("num-workers", 0))
 
-def apply_transforms(batch):
-    """Apply transforms to the partition from FederatedDataset."""
-    batch["img"] = [pytorch_transforms(img) for img in batch["img"]]
-    return batch
+    records = client_records(data_root, partition_csv, int(partition_id))
+    return make_loaders(
+        records,
+        batch_size=batch_size,
+        cache_rate=cache_rate,
+        seed=seed,
+        num_workers=num_workers,
+        pin_memory=False,
+    )
 
-brain_dataset = None
 
-def get_dataset():
-    global brain_dataset
-    DATASET_PATH = "data/brain-tumor-multimodal-image"
-    if brain_dataset is None:
-        loader = create_dataset('brain_tumor', DATASET_PATH)
-        brain_dataset = loader.load()
+def load_centralized_dataset(config: dict):
+    """Load pooled dataset loaders for centralized baseline evaluation."""
+    data_root = config["data-root"]
+    partition_csv = config["partition-csv"]
+    batch_size = int(config.get("batch-size", 1))
+    cache_rate = float(config.get("cache-rate", 0.0))
+    seed = int(config.get("seed", 42))
+    num_workers = int(config.get("num-workers", 0))
 
-    return brain_dataset
+    all_groups = read_partitioning(data_root, partition_csv)
+    records = [rec for _, group in all_groups for rec in group]
+    return make_loaders(
+        records,
+        batch_size=batch_size,
+        cache_rate=cache_rate,
+        seed=seed,
+        num_workers=num_workers,
+        pin_memory=False,
+    )
 
-def load_data(partition_id: int, num_partitions: int, batch_size: int):
 
-    brain_dataset = get_dataset()
-    partitioner = get_partitioner(num_partitions)
-    
-    partitioner.dataset = brain_dataset["train"]
-    partition = partitioner.load_partition(partition_id)
-
-    print(f"Client {partition_id}: Partition size = {len(partition)}")
-
-    print(Counter(partition["modality"]))
-    print(Counter(partition["label"]))
- 
-    partition = partition.train_test_split(test_size=0.2, seed=42,)
-
-    print(f"Client {partition_id}: train={len(partition["train"])}, test={len(partition["test"])}")
-
-    partition = partition.with_transform(apply_transforms)
-    trainloader = DataLoader( partition["train"], batch_size=batch_size, shuffle=True,)
-    testloader = DataLoader(partition["test"], batch_size=batch_size, shuffle=False,)
-
-    return trainloader, testloader
-
-def load_centralized_dataset():
-    """Load test set and return dataloader."""
-    # Load entire test set
-    dataset = get_dataset()
-    test_dataset = dataset["test"]
-    dataset = test_dataset.with_format("torch").with_transform(apply_transforms)
-    return DataLoader(dataset, batch_size=128)
-
-def test(net, testloader, device):
-    """Validate the model on the test set."""
-    net.to(device)
+def test(model, valloader, device: torch.device):
+    """Evaluate model on validation loader using sliding window inference."""
+    model.to(device)
+    model.eval()
     criterion = torch.nn.CrossEntropyLoss()
-    correct, loss = 0, 0.0
+    totals = {
+        "loss": 0.0,
+        "dice_et": 0.0, "dice_tc": 0.0, "dice_wt": 0.0,
+        "hd95_et": 0.0, "hd95_tc": 0.0, "hd95_wt": 0.0,
+    }
     with torch.no_grad():
-        for batch in testloader:
-            images = batch["img"].to(device)
-            labels = batch["label"].to(device)
-            outputs = net(images)
-            loss += criterion(outputs, labels).item()
-            correct += (torch.max(outputs.data, 1)[1] == labels).sum().item()
-    accuracy = correct / len(testloader.dataset)
-    loss = loss / len(testloader)
-    return loss, accuracy
+        for batch in valloader:
+            images = (batch["image"] if "image" in batch else batch["img"]).to(device)
+            labels = batch["label"].to(device).long()
+            logits = sliding_window_inference(
+                images, roi_size=(96, 96, 96), sw_batch_size=1, predictor=model
+            )
+            loss_val = criterion(logits, labels.squeeze(1) if labels.ndim == 5 else labels).item()
+            totals["loss"] += loss_val
+            metrics = fets_region_metrics(logits, labels)
+            for key, val in metrics.items():
+                totals[key] += val
+
+    count = max(len(valloader), 1)
+    results = {k: v / count for k, v in totals.items()}
+    return results["loss"], results
