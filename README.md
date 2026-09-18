@@ -1,81 +1,114 @@
----
-tags: [quickstart, vision, fds]
-dataset: [CIFAR-10]
-framework: [torch, torchvision]
----
+# FeTS 2022: Flower FedAvg/FedProx
 
-# Federated Learning with PyTorch and Flower (Quickstart Example)
+This project uses Flower's current ClientApp, ServerApp, ArrayRecord, and
+built-in FedAvg/FedProx APIs. It does not implement a custom aggregation
+algorithm.
 
-This introductory example to Flower uses PyTorch, but deep knowledge of PyTorch is not necessarily required to run the example. However, it will help you understand how to adapt Flower to your use case. Running this example in itself is quite easy. This example uses [Flower Datasets](https://flower.ai/docs/datasets/) to download, partition and preprocess the CIFAR-10 dataset.
+## Setup
 
-## Set up the project
+Use 64-bit Python 3.11, not Python 3.14. Flower's documentation recommends
+Python 3.11 for simulations because of Ray compatibility. The Python 3.14
+package resolver can select old source-only packages (including Matplotlib)
+that cannot build on Python 3.14.
 
-### Fetch the app
+On Windows PowerShell, create and activate an isolated Python 3.11 environment:
 
-Install Flower:
+    py -3.11 -m venv .venv
+    .\.venv\Scripts\Activate.ps1
+    python -m pip install --upgrade pip setuptools wheel
 
-```shell
-pip install flwr
-```
+1. Download and extract MICCAI_FeTS2022_TrainingData.zip.
+2. Set the two Windows paths in pyproject.toml:
+   data-root is the extracted directory containing FeTS2022\_### folders;
 
-Fetch the app:
+   partition-csv is its partitioning_1.csv.
 
-```shell
-flwr new @flwrlabs/quickstart-pytorch
-```
+3. Install. For a CPU-only Windows installation, install the official CPU
+   wheel first:
 
-This will create a new directory called `quickstart-pytorch` with the following structure:
+   pip install torch --index-url https://download.pytorch.org/whl/cpu
+   pip install -r requirements.txt
 
-```shell
-quickstart-pytorch
-├── pytorchexample
-│   ├── __init__.py
-│   ├── client_app.py   # Defines your ClientApp
-│   ├── server_app.py   # Defines your ServerApp
-│   └── task.py         # Defines your model, training and data loading
-├── pyproject.toml      # Project metadata like dependencies and configs
-└── README.md
-```
+4. Verify the dataset:
 
-### Install dependencies and project
+   python verify_dataset.py
 
-Install the dependencies defined in `pyproject.toml` as well as the `pytorchexample` package.
+5. Run a small CPU-only federated experiment:
 
-```bash
-pip install -e .
-```
+   python flower_run.py --clients 3 --rounds 2 --strategy fedavg
 
-## Run the project
+The clients argument selects the first N real institution partitions from
+partitioning_1.csv, and rounds controls the number of Flower server rounds.
+The runner configures CPU-only virtual SuperNodes and then invokes Flower with
+streaming logs. Start with one client and one round to validate memory use.
 
-You can run your Flower project in both _simulation_ and _deployment_ mode without making changes to the code. If you are starting with Flower, we recommend you using the _simulation_ mode as it requires fewer components to be launched manually. By default, `flwr run` will make use of the Simulation Engine.
+## Strategy selection
 
-### Run with the Simulation Engine
+strategy = "fedavg" selects Flower's built-in FedAvg.
 
-> [!TIP]
-> This example runs faster when the `ClientApp`s have access to a GPU. Check the [Simulation Engine documentation](https://flower.ai/docs/framework/how-to-run-simulations.html) to learn more about Flower simulations and how to optimize them.
+strategy = "fedprox" selects Flower's built-in FedProx. The client reads
+the proximal-mu value that the documented Flower FedProx strategy places in
+the training config and adds the required proximal loss term. No aggregation
+method is reimplemented.
 
-```bash
-# Run with the default federation (CPU only)
-flwr run .  --stream
-```
+## Metrics
 
-You can also override some of the settings for your `ClientApp` and `ServerApp` defined in `pyproject.toml`. For example:
+The client holds out 15% of each institution's labelled cases locally. Each
+round reports Dice and HD95 for enhancing tumour (ET), tumour core (TC), and
+whole tumour (WT). The Synapse validation archive is not used for metrics
+because its ground-truth segmentations are protected.
 
-```bash
-flwr run . --run-config "num-server-rounds=5 learning-rate=0.05"  --stream
-```
+## Central baseline
 
-> [!TIP]
-> For a more detailed walk-through check our [quickstart PyTorch tutorial](https://flower.ai/docs/framework/tutorial-quickstart-pytorch.html)
+For a pooled-data comparison only:
 
-### Run with the Deployment Engine
+python centralize_baseline.py --data-root "C:/.../TrainingData" --partition-csv "C:/.../partitioning_1.csv"
 
-Follow this [how-to guide](https://flower.ai/docs/framework/how-to-run-flower-with-deployment-engine.html) to run the same app in this example but with Flower's Deployment Engine. After that, you might be intersted in setting up [secure TLS-enabled communications](https://flower.ai/docs/framework/how-to-enable-tls-connections.html) and [SuperNode authentication](https://flower.ai/docs/framework/how-to-authenticate-supernodes.html) in your federation.
+It must not be used as the federated result.
 
+## Interactive Strategy Menu & 9 Baselines
 
-### Dataset
-The following dataset is used in this repository.
+You can launch the runner interactively:
 
-[Brain tumor multimodal image (CT & MRI)](https://www.kaggle.com/datasets/murtozalikhon/brain-tumor-multimodal-image-ct-and-mri)
+    python flower_run.py --clients 3 --rounds 5
 
-If you are already familiar with how the Deployment Engine works, you may want to learn how to run it using Docker. Check out the [Flower with Docker](https://flower.ai/docs/framework/docker/index.html) documentation.
+An interactive numbered menu allows selecting any of Flower's 9 built-in strategies:
+
+1. `fedavg` - Standard weighted average
+2. `fedprox` - Heterogeneous non-IID regularizer
+3. `fedavgm` - Server-side momentum
+4. `fedadagrad` - Adaptive server learning rates
+5. `fedadam` - Adam-like server optimization
+6. `fedyogi` - Yogi-like adaptive variance control
+7. `qfedavg` - Fairness-oriented weighting
+8. `fedmedian` - Robust coordinate-wise median
+9. `fedtrimmedavg` - Robust trimmed mean
+
+You can also pass the strategy directly via CLI:
+
+    python flower_run.py --clients 3 --rounds 5 --strategy fedadam
+
+## Hardware Auto-Detection (GPU / CPU)
+
+The runner automatically checks for NVIDIA CUDA GPU availability:
+
+- If a CUDA device is detected, training runs on GPU (`cuda:0`).
+- If no CUDA device is present, it automatically falls back to CPU.
+- Override option: `--device auto`, `--device cuda`, or `--device cpu`.
+
+## Global Test Module
+
+To evaluate the final aggregated model on completely unseen data:
+
+- `global-test-fraction = 0.15` in `pyproject.toml` reserves 15% of cases from each institution.
+- Clients only receive the remaining 85% for local training and validation (zero data leakage).
+- After all federated rounds finish, the server runs a final evaluation on the reserved global test set.
+
+## Output Artifacts
+
+All training artifacts and logs are saved in `artifacts/`:
+
+- `artifacts/<strategy>_fets2022_final.pt`: Final model weights
+- `artifacts/<strategy>_fets2022_metrics.csv`: Round-by-round global federated metrics
+- `artifacts/<strategy>_fets2022_client_history.csv`: Per-institution training and validation metrics
+- `artifacts/<strategy>_fets2022_global_test.csv`: Final unseen global test results
