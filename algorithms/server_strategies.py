@@ -1,21 +1,5 @@
-from flwr.serverapp.strategy import FedAvg, FedProx
-
-STRATEGY_REGISTRY = {
-    "fedavg": FedAvg,
-    "fedprox": FedProx,
-}
+from .FL_methods import build_strategy, make_fedavg, make_fedprox
 
 
-def get_strategy(algorithm: str, **kwargs):
-    algorithm_key = algorithm.lower()
-    if algorithm_key not in STRATEGY_REGISTRY:
-        raise ValueError(
-            f"Unknown algorithm '{algorithm}'. Available: {list(STRATEGY_REGISTRY)}"
-        )
-    strategy_cls = STRATEGY_REGISTRY[algorithm_key]
-
-    params = dict(kwargs)
-    if "weighted_by_key" not in params:
-        params["weighted_by_key"] = "num-examples"
-
-    return strategy_cls(**params)
+def get_strategy(strategy_name: str, config: dict, num_clients: int):
+    return build_strategy(strategy_name, config, num_clients)

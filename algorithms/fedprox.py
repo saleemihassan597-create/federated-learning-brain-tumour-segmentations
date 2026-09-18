@@ -3,7 +3,7 @@ from .base import BaseTrainer
 
 
 class FedProxTrainer(BaseTrainer):
-    """FedAvg + proximal term penalizing drift from the global model."""
+    """FedProx local trainer with proximal penalty."""
 
     def __init__(self, proximal_mu: float = 0.01, **kwargs):
         super().__init__(**kwargs)
@@ -11,7 +11,6 @@ class FedProxTrainer(BaseTrainer):
         self.global_params = None
 
     def on_train_start(self, model):
-        # Snapshot global params BEFORE local training mutates them
         self.global_params = [p.detach().clone() for p in model.parameters()]
 
     def compute_loss(self, model, outputs, labels, criterion):

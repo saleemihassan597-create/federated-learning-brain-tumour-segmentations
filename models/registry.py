@@ -1,10 +1,7 @@
-from .base import BaseModel
-from .mobilenet import MobileNetModel
-from .resnet import ResNetModel
-from .unet import UNetModel
+from .ML_model import UNetModel
 
-MODEL_REGISTRY: dict[str, type[BaseModel]] = {
+MODEL_REGISTRY = {
+    "ml_model": UNetModel,
     "unet": UNetModel,
-    "mobilenet": MobileNetModel,
-    "resnet": ResNetModel,
+    "default": UNetModel,
 }

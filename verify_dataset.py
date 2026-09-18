@@ -1,15 +1,11 @@
-from __future__ import annotations
+"""Fail early if the extracted FeTS training data or CSV is incomplete."""
 
-import os
-import sys
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
-sys.modules.setdefault("tensorflow", None)
+from __future__ import annotations
 
 import tomllib
 from pathlib import Path
 
-from datasets_loaders.fets_dataset import read_partitioning
+from dataset import read_partitioning
 
 
 def verify_dataset(pyproject_path: str | Path = "pyproject.toml", requested_clients: int | None = None) -> None:

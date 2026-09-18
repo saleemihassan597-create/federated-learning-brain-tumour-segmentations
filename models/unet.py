@@ -1,18 +1,5 @@
-import torch.nn as nn
-from monai.networks.nets import UNet
+"""Redirect to ML_model.py containing user's MONAI 3D UNet model."""
 
-from .base import BaseModel
+from .ML_model import UNetModel, build_model
 
-
-class UNetModel(BaseModel):
-    """3D MONAI UNet model for FeTS 2022 segmentation."""
-
-    def build(self) -> nn.Module:
-        return UNet(
-            spatial_dims=3,
-            in_channels=4,
-            out_channels=4,
-            channels=(16, 32, 64, 128, 256),
-            strides=(2, 2, 2, 2),
-            num_res_units=2,
-        )
+__all__ = ["UNetModel", "build_model"]

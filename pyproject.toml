@@ -1,14 +1,11 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
 [project]
 name = "fets2022-flower"
 version = "0.1.0"
 description = "FeTS 2022 3D MRI federated segmentation with Flower"
-license = {text = "Apache-2.0"}
+license = "Apache-2.0"
+requires-python = ">=3.11,<3.12"
 dependencies = [
-    "flwr[simulation]>=1.13.0",
+    "flwr[simulation]>=1.35.0",
     "torch>=2.1.0",
     "monai>=1.3.0",
     "nibabel>=5.2.0",
@@ -17,21 +14,17 @@ dependencies = [
     "scipy>=1.11.0",
 ]
 
-[tool.hatch.build.targets.wheel]
-packages = ["."]
-
 [tool.flwr.app]
 publisher = "researcher"
-fab-format-version = 1
-flwr-version-target = "1.31.0"
 
 [tool.flwr.app.components]
-serverapp = "server_app:app"
-clientapp = "client_app:app"
+serverapp = "FL_server:app"
+clientapp = "FL_client:app"
 
 [tool.flwr.app.config]
-data-root = "E:/rnds/MICCAI_FeTS2022_TrainingData/MICCAI_FeTS2022_TrainingData"
-partition-csv = "E:/rnds/MICCAI_FeTS2022_TrainingData/MICCAI_FeTS2022_TrainingData/partitioning_1.csv"
+data-root = "C:/Users/syedh/Documents/BraT_Segmentation_FeTs2022/MICCAI_FeTS2022_TrainingData"
+partition-csv = "C:/Users/syedh/Documents/BraT_Segmentation_FeTs2022/MICCAI_FeTS2022_TrainingData/partitioning_1.csv"
+global-test-fraction = 0.15
 output-dir = "artifacts"
 num-clients = 23
 num-server-rounds = 5
@@ -40,18 +33,17 @@ batch-size = 1
 learning-rate = 0.0001
 fraction-train = 1.0
 fraction-evaluate = 1.0
-algorithm = "fedavg"
+strategy = "fedavg"
 proximal-mu = 0.01
+server-learning-rate = 1.0
+server-momentum = 0.9
+fedopt-eta = 0.1
+fedopt-tau = 0.001
+beta-1 = 0.9
+beta-2 = 0.99
+qfedavg-q = 0.1
+trim-beta = 0.2
 cache-rate = 0.0
 seed = 42
-device = "cpu"
+device = "auto"
 num-workers = 0
-model_name = "unet"
-dataset_name = "fets2022"
-save-model = false
-min-available-clients = 2
-
-[partition]
-type = "iid"
-alpha = 0.5
-num_shards = 2
