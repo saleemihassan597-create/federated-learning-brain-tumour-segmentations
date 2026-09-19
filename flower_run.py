@@ -16,6 +16,7 @@ from pathlib import Path
 import subprocess
 
 from verify_dataset import verify_dataset
+from client_data_distribution import generate_client_data_distribution
 
 
 def patch_all_ray_installations():
@@ -109,6 +110,7 @@ def main(clients: int, rounds: int, strategy: str, cpus_per_client: int, device:
     patch_all_ray_installations()
     project_dir = Path(__file__).resolve().parent
     verify_dataset(project_dir / "pyproject.toml", requested_clients=clients)
+    generate_client_data_distribution(project_dir / "pyproject.toml", requested_clients=clients)
 
     # Detect CUDA GPU availability first; fall back to CPU if unavailable
     import torch

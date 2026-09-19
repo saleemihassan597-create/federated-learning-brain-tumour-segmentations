@@ -22,8 +22,8 @@ serverapp = "FL_server:app"
 clientapp = "FL_client:app"
 
 [tool.flwr.app.config]
-data-root = "C:/Users/syedh/Documents/BraT_Segmentation_FeTs2022/MICCAI_FeTS2022_TrainingData"
-partition-csv = "C:/Users/syedh/Documents/BraT_Segmentation_FeTs2022/MICCAI_FeTS2022_TrainingData/partitioning_1.csv"
+data-root = "E:/rnds/MICCAI_FeTS2022_TrainingData/MICCAI_FeTS2022_TrainingData"
+partition-csv = "E:/rnds/MICCAI_FeTS2022_TrainingData/MICCAI_FeTS2022_TrainingData/partitioning_1.csv"
 global-test-fraction = 0.15
 output-dir = "artifacts"
 num-clients = 23
